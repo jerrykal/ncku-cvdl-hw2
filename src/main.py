@@ -58,7 +58,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnQ41.clicked.connect(lambda: summary(self.vgg19_model, (3, 32, 32)))
         self.btnQ42.clicked.connect(self.show_loss_and_acc)
         self.btnQ43.clicked.connect(self.vgg19_inference)
-        self.btnQ44.clicked.connect(self.drawing_widget.reset)
+        self.btnQ44.clicked.connect(self.reset_q4)
 
     def load_image(self):
         imgpath = QFileDialog.getOpenFileName(
@@ -115,9 +115,23 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
         # Inference
         input = img.unsqueeze(0)
-        pred = self.vgg19_model(input).argmax(dim=1).item()
+        output = self.vgg19_model(input)
+        pred = torch.argmax(output, dim=1).item()
         self.lblVGGPred.setText(str(pred))
 
+        # Show predict probability
+        plt.bar(range(0, 10), torch.softmax(output, dim=1).squeeze().tolist())
+        plt.title("Probability of each class")
+        plt.ylabel("Probability")
+        plt.ylim(0, 1)
+        plt.yticks([i / 10 for i in range(0, 11)])
+        plt.xlabel("Class")
+        plt.xticks(range(0, 10))
+        plt.show()
+
+    def reset_q4(self):
+        self.lblVGGPred.setText("")
+        self.drawing_widget.reset()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
