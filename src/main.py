@@ -2,18 +2,22 @@ import os
 import sys
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torchvision
-from PIL import ImageQt
+from PIL import Image, ImageQt
 from PyQt5.QtCore import QRect
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QApplication, QFileDialog, QMainWindow
 from torchsummary import summary
 from torchvision.transforms import v2
 
 from bg_subtract import background_subtraction
+from custom_resnet50 import CustomResNet50
 from optical_flow import find_tracking_point, video_tracking
 from pca import dimension_reduction
+from train_resnet50 import transform_val as transform_resnet50
 from ui.drawing_widget import DrawingWidget
 from ui.mainwindow import Ui_MainWindow
 
@@ -24,6 +28,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
 
         self.image = None
+        self.q5_image = None
         self.frames = []
         self.drawing_widget = DrawingWidget(self.groupBox_4, QRect(260, 40, 361, 191))
 
@@ -44,6 +49,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         )
         self.vgg19_model.eval()
 
+        # Load ResNet50 model
+        self.resnet50_model = CustomResNet50()
+        self.resnet50_model.load_state_dict(
+            torch.load(
+                os.path.abspath(
+                    os.path.join(
+                        __file__, os.pardir, os.pardir, "models", "resnet50_re.pth"
+                    )
+                ),
+                map_location="cpu",
+            )
+        )
+        self.resnet50_model.eval()
+
         # Q1
         self.btnQ1.clicked.connect(lambda: background_subtraction(self.frames))
 
@@ -59,6 +78,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.btnQ42.clicked.connect(self.show_loss_and_acc)
         self.btnQ43.clicked.connect(self.vgg19_inference)
         self.btnQ44.clicked.connect(self.reset_q4)
+
+        # Q5
+        self.btnQ5LoadImg.clicked.connect(self.load_q5_image)
+        self.btnQ51.clicked.connect(self.show_q5_image)
+        self.btnQ52.clicked.connect(lambda: summary(self.resnet50_model, (3, 224, 224)))
+        self.btnQ53.clicked.connect(self.show_acc_comparison)
+        self.btnQ54.clicked.connect(self.resnet50_inference)
 
     def load_image(self):
         imgpath = QFileDialog.getOpenFileName(
@@ -132,6 +158,80 @@ class MainWindow(QMainWindow, Ui_MainWindow):
     def reset_q4(self):
         self.lblVGGPred.setText("")
         self.drawing_widget.reset()
+
+    def load_q5_image(self):
+        imgpath = QFileDialog.getOpenFileName(
+            self, "Open Image", "", "Image Files (*.jpg *.png)"
+        )[0]
+        if imgpath == "":
+            return
+
+        self.q5_image = Image.open(imgpath)
+
+        qimg = QPixmap(imgpath)
+        self.lblQ5Img.setPixmap(qimg.scaled(self.lblQ5Img.size()))
+
+    def show_q5_image(self):
+        data_dir = os.path.abspath(
+            os.path.join(
+                __file__, os.pardir, os.pardir, "data", "Q5", "inference_dataset"
+            )
+        )
+
+        # Pick a random cat image
+        cat_dir = os.path.join(data_dir, "Cat")
+        cat_img = Image.open(
+            os.path.join(cat_dir, np.random.choice(os.listdir(cat_dir)))
+        )
+
+        # Pick a random dog image
+        dog_dir = os.path.join(data_dir, "Dog")
+        dog_img = Image.open(
+            os.path.join(dog_dir, np.random.choice(os.listdir(dog_dir)))
+        )
+
+        # Resize image
+        cat_img = v2.ToPILImage()(transform_resnet50(cat_img))
+        dog_img = v2.ToPILImage()(transform_resnet50(dog_img))
+
+        # Show images using matplotlib
+        fig, ax = plt.subplots(1, 2)
+        ax[0].imshow(cat_img)
+        ax[1].imshow(dog_img)
+        ax[0].set_title("Cat")
+        ax[1].set_title("Dog")
+        plt.show()
+
+    def show_acc_comparison(self):
+        image = cv2.imread(
+            os.path.abspath(
+                os.path.join(
+                    __file__,
+                    os.pardir,
+                    os.pardir,
+                    "logs",
+                    "resnet50_acc_comparison.png",
+                )
+            )
+        )
+        cv2.imshow("Accuracy Comparison", image)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    def resnet50_inference(self):
+        if self.q5_image is None:
+            return
+
+        # Preprocess image
+        input = transform_resnet50(self.q5_image).unsqueeze(0)
+
+        # Inference
+        output = self.resnet50_model(input)
+        pred = torch.round(output).item()
+
+        # Show result
+        self.lblResNetPred.setText("Cat" if pred == 1 else "Dog")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
