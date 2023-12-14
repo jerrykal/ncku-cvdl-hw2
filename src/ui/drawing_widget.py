@@ -19,7 +19,7 @@ class DrawingWidget(QLabel):
 
     def paintEvent(self, event):
         pixmap_painter = QPainter(self.pix)
-        pixmap_painter.setPen(QPen(Qt.white, 5))  # type: ignore
+        pixmap_painter.setPen(QPen(Qt.white, 10, cap=Qt.RoundCap))  # type: ignore
 
         if self.last_point is not None and self.end_point is not None:
             pixmap_painter.drawLine(self.last_point, self.end_point)
